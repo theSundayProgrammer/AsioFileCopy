@@ -1,7 +1,7 @@
 // CopyFile.cpp : Defines the entry point for the console application.
 //
 
-#include <cstdlib>
+
 #include <deque>
 #include <iostream>
 #include <thread>
@@ -144,7 +144,7 @@ int main(int argc, char* argv[])
 	LARGE_INTEGER liFileSizeSrc;
 	if (argc<3)
 	{
-		printf("Usage: %s DestinationFile SourceFile\n", argv[0]);
+		std::cout << "Usage: " << argv[0] << " DestinationFile SourceFile" << std::endl;
 		return 0;
 	}
 	DWORD k = GetTickCount();
@@ -171,6 +171,6 @@ int main(int argc, char* argv[])
 		return 1;
 	}
 	truncate_file(argv[1], liFileSizeSrc);
-	printf("time taken=%d\n", GetTickCount() - k);
+	std::cout << "time taken=" << GetTickCount() - k << std::endl;
 	return 0;
 }
