@@ -35,7 +35,8 @@ void write_data(
 		return;
 	}
 
-	dest_file.async_write_some_at(
+	asio::async_write_at(
+		dest_file,
         file_offset, 
         asio::buffer(buffer_ ,buf_size),
 		[=, &dest_file]
@@ -57,12 +58,16 @@ void read_data(random_access_handle& src_file,
 	size_t buf_size)
 {
 	unsigned char* buffer_ = new unsigned char[BUFFSIZE];
-	src_file.async_read_some_at(file_offset, asio::buffer(buffer_, BUFFSIZE),
+	asio::async_read_at(src_file,file_offset, asio::buffer(buffer_, BUFFSIZE),
 		[buffer_, file_offset, &dest_file,&src_file](const asio::error_code& error, // Result of operation.
 			std::size_t bytes_transferred) // Number of bytes written)
 	{
 		if (bytes_transferred > 0)
 			write_data(dest_file, buffer_, file_offset, BUFFSIZE);
+		else
+		{
+			delete[] buffer_;
+		}
 		if (bytes_transferred == BUFFSIZE)
 			read_data(src_file, dest_file, file_offset + bytes_transferred, BUFFSIZE);
 
