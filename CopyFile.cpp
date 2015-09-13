@@ -6,7 +6,8 @@
 #include <iostream>
 #include <thread>
 #include <asio.hpp>
-#include <asio/error.hpp>
+#include <exception>
+#include <tuple>
 const DWORD BUFFSIZE = (2 * 1024);  // The size of an I/O buffer
 // roundup 
 // returns  min{k: k >= Value && k%Multiple == 0}
@@ -73,6 +74,70 @@ void read_data(random_access_handle& src_file,
 
 	});
 }
+void truncate_file(char* fName, LARGE_INTEGER siz)
+{
+	//Open destination file again and truncate its size
+	HANDLE hfileDst = CreateFile
+		(
+			fName,
+			GENERIC_WRITE,
+			0,
+			NULL,
+			OPEN_EXISTING,
+			0,
+			NULL
+			);
+	if (hfileDst != INVALID_HANDLE_VALUE)
+	{
+
+		SetFilePointerEx(hfileDst, siz, NULL, FILE_BEGIN);
+		SetEndOfFile(hfileDst);
+		CloseHandle(hfileDst);
+	}
+}
+
+std::tuple<HANDLE, HANDLE,LARGE_INTEGER> get_file_handles(char* src_fname, char* dest_fname)
+{
+	LARGE_INTEGER liFileSizeSrc;
+	//Open Source File
+	//Create Destination file
+	//Set destination file size to multiple of BUFFSIZE 
+	//	and greater than or equal to Source File size
+	HANDLE hfileSrc = CreateFile(
+		src_fname,
+		GENERIC_READ,
+		FILE_SHARE_READ,
+		NULL,
+		OPEN_EXISTING,
+		FILE_FLAG_NO_BUFFERING | FILE_FLAG_OVERLAPPED,
+		NULL
+		);
+	if (hfileSrc == INVALID_HANDLE_VALUE)
+	{
+		throw std::invalid_argument(src_fname);
+	}
+
+	HANDLE hfileDst = CreateFile(
+		dest_fname,
+		GENERIC_WRITE,
+		0,
+		NULL,
+		CREATE_ALWAYS,
+		FILE_FLAG_NO_BUFFERING | FILE_FLAG_OVERLAPPED,
+		hfileSrc
+		);
+	if (hfileDst == INVALID_HANDLE_VALUE)
+	{
+		CloseHandle(hfileSrc);
+		throw std::invalid_argument(dest_fname);
+	}
+	GetFileSizeEx(hfileSrc, &liFileSizeSrc);
+	LARGE_INTEGER liFileSizeDst;
+	liFileSizeDst.QuadPart = roundup(liFileSizeSrc.QuadPart, BUFFSIZE);
+	SetFilePointerEx(hfileDst, liFileSizeDst, NULL, FILE_BEGIN);
+	SetEndOfFile(hfileDst);
+	return std::make_tuple(hfileSrc, hfileDst, liFileSizeSrc);
+}
 
 int main(int argc, char* argv[])
 {
@@ -83,78 +148,29 @@ int main(int argc, char* argv[])
 		return 0;
 	}
 	DWORD k = GetTickCount();
+	try
 	{
         asio::io_context io_context;
-		//Open Source File
-		//Create Destination file
-		//Set destination file size to multiple of BUFFSIZE 
-		//	but greater than or equal to Source File size
 		random_access_handle src_file(io_context);
         random_access_handle dest_file(io_context);
-        HANDLE hfileSrc = CreateFile(
-			argv[2],
-			GENERIC_READ,
-			FILE_SHARE_READ,
-			NULL,
-			OPEN_EXISTING,
-			FILE_FLAG_NO_BUFFERING | FILE_FLAG_OVERLAPPED,
-			NULL
-			);
-		if (hfileSrc == INVALID_HANDLE_VALUE)
-		{
-			printf("invalid source file\n");
-			return 1;
-		}
-        asio::error_code ec;
-        src_file.assign(hfileSrc,ec);
+		asio::error_code ec;
+		HANDLE src, dest;
+		std::tie(src,dest, liFileSizeSrc)= get_file_handles(argv[2], argv[1]);
+		src_file.assign(src, ec);
 
+		dest_file.assign(dest,ec);
 
-		HANDLE hfileDst = CreateFile(
-			argv[1],
-			GENERIC_WRITE,
-			0,
-			NULL,
-			CREATE_ALWAYS,
-			FILE_FLAG_NO_BUFFERING | FILE_FLAG_OVERLAPPED,
-			hfileSrc
-			);
-		if (hfileDst == INVALID_HANDLE_VALUE)
-		{
-			printf("invalid destination file\n");
-			return 2;
-		}
-		GetFileSizeEx(hfileSrc, &liFileSizeSrc);
-		LARGE_INTEGER liFileSizeDst;
-		liFileSizeDst.QuadPart = roundup(liFileSizeSrc.QuadPart, BUFFSIZE);
-		SetFilePointerEx(hfileDst, liFileSizeDst, NULL, FILE_BEGIN);
-		SetEndOfFile(hfileDst);
-        dest_file.assign(hfileDst,ec);
         uint64_t offset=0;
-        unsigned char* buffer_ = new unsigned char[BUFFSIZE];
 		read_data(src_file, dest_file, offset, BUFFSIZE);
        
         io_context.run();
 	}
+	catch (std::exception& ex)
 	{
-		//Open destination file again and truncate its size
-		HANDLE hfileDst = CreateFile
-			(
-			argv[1],
-			GENERIC_WRITE,
-			0,
-			NULL,
-			OPEN_EXISTING, 
-			0,
-			NULL
-			);
-		if (hfileDst != INVALID_HANDLE_VALUE)
-		{
-
-			SetFilePointerEx(hfileDst, liFileSizeSrc, NULL, FILE_BEGIN);
-			SetEndOfFile(hfileDst);
-            CloseHandle(hfileDst);
-		}
+		std::cout << "Exception " << ex.what() << std::endl;
+		return 1;
 	}
+	truncate_file(argv[1], liFileSizeSrc);
 	printf("time taken=%d\n", GetTickCount() - k);
 	return 0;
 }
